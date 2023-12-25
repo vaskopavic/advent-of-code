@@ -4,263 +4,223 @@ const path = "./input.txt";
 const file = Bun.file(path);
 const input = await file.text();
 
-const parseInput = (input: string) =>
-  input.split(/\r?\n/).map((line) => line.split("").map(Number));
+type DirIdx = 0 | 1 | 2 | 3;
+type Coord = [number, number];
 
-class Node {
-  val: string;
-  priority: number;
+const MaxStraight = 3;
+const MinStraightUltra = 4;
+const MaxStraightUltra = 10;
 
-  constructor(val: string, priority: number) {
-    this.val = val;
-    this.priority = priority;
-  }
-}
+const Dirs: [Coord, Coord, Coord, Coord] = [
+  [0, 1],
+  [-1, 0],
+  [0, -1],
+  [1, 0],
+];
 
-class PriorityQueue {
-  values: Node[];
+class Heap<E extends { key: number; priority: number }> {
+  binHeap: E[];
 
   constructor() {
-    this.values = [];
+    this.binHeap = [];
   }
-  enqueue(val: string, priority: number) {
-    const newNode = new Node(val, priority);
-    this.values.push(newNode);
-    this.bubbleUp();
-  }
-  bubbleUp() {
-    let idx = this.values.length - 1;
-    const element = this.values[idx];
-    while (idx > 0) {
-      const parentIdx = Math.floor((idx - 1) / 2);
-      const parent = this.values[parentIdx];
-      if (element.priority >= parent.priority) break;
-      this.values[parentIdx] = element;
-      this.values[idx] = parent;
-      idx = parentIdx;
+  popMin(): E | undefined {
+    if (this.binHeap.length === 0) {
+      return undefined;
     }
-  }
-  dequeue() {
-    const min = this.values[0];
-    const end = this.values.pop();
-    if (end && this.values.length > 0) {
-      this.values[0] = end;
-      this.sinkDown();
+    const min = this.binHeap[0];
+    this.binHeap[0] = this.binHeap[this.binHeap.length - 1];
+    this.binHeap.pop();
+    if (this.binHeap.length > 0) {
+      this.diveDown(0);
     }
     return min;
   }
-  sinkDown() {
-    let idx = 0;
-    const length = this.values.length;
-    const element = this.values[0];
-    while (true) {
-      const leftChildIdx = 2 * idx + 1;
-      const rightChildIdx = 2 * idx + 2;
-      let leftChild, rightChild;
-      let swap = null;
-
-      if (leftChildIdx < length) {
-        leftChild = this.values[leftChildIdx];
-        if (leftChild.priority < element.priority) {
-          swap = leftChildIdx;
-        }
-      }
-      if (rightChildIdx < length) {
-        rightChild = this.values[rightChildIdx];
-        if (
-          leftChild &&
-          ((swap === null && rightChild.priority < element.priority) ||
-            (swap !== null && rightChild.priority < leftChild.priority))
-        ) {
-          swap = rightChildIdx;
-        }
-      }
-      if (swap === null) break;
-      this.values[idx] = this.values[swap];
-      this.values[swap] = element;
-      idx = swap;
-    }
+  push(elem: E): void {
+    this.binHeap.push(elem);
+    this.floatUp(this.binHeap.length - 1);
   }
-}
-
-class WeightedGraph {
-  adjacencyList: { [key: string]: Array<{ node: string; weight: number }> };
-
-  constructor() {
-    this.adjacencyList = {};
-  }
-  addVertex(vertex: string) {
-    if (!this.adjacencyList[vertex]) this.adjacencyList[vertex] = [];
-  }
-  addEdge(vertex1: string, vertex2: string, weight: number) {
-    const existing = this.adjacencyList[vertex1].find(
-      (e) => e.node === vertex2
-    );
-    if (!existing) {
-      this.adjacencyList[vertex1].push({ node: vertex2, weight });
-    }
-  }
-  Dijkstra(start: string, finish: string) {
-    const nodes = new PriorityQueue();
-    const distances: { [key: string]: number } = {};
-    const previous: { [key: string]: string | null } = {};
-    const path: string[] = [];
-    let endDist = Number.MAX_SAFE_INTEGER;
-    let smallest;
-    for (const vertex in this.adjacencyList) {
-      if (vertex === start) {
-        distances[vertex] = 0;
-        nodes.enqueue(vertex, 0);
-      } else {
-        distances[vertex] = Infinity;
-        nodes.enqueue(vertex, Infinity);
-      }
-      previous[vertex] = null;
-    }
-    while (nodes.values.length) {
-      smallest = nodes.dequeue().val;
-      if (smallest === finish) {
-        endDist = distances[smallest];
-        while (smallest && previous[smallest]) {
-          path.push(smallest);
-          smallest = previous[smallest];
-        }
+  floatUp(index: number): void {
+    const cElem = this.binHeap[index];
+    const cPrio = cElem.priority;
+    while (index > 0) {
+      const parent = ~~((index - 1) / 2);
+      if (this.binHeap[parent].priority <= cPrio) {
         break;
       }
-      if (smallest || distances[smallest] !== Infinity) {
-        for (const neighbor in this.adjacencyList[smallest]) {
-          const nextNode = this.adjacencyList[smallest][neighbor];
-          const candidate = distances[smallest] + nextNode.weight;
-          const nextNeighbor = nextNode.node;
-          if (candidate < distances[nextNeighbor]) {
-            distances[nextNeighbor] = candidate;
-            previous[nextNeighbor] = smallest;
-            nodes.enqueue(nextNeighbor, candidate);
-          }
-        }
-      }
+      this.binHeap[index] = this.binHeap[parent];
+      index = parent;
     }
-    return {
-      distance: endDist,
-      path: path
-        .concat(smallest ?? "")
-        .reverse()
-        .join("-"),
-    };
+    this.binHeap[index] = cElem;
+  }
+  diveDown(index: number): void {
+    const cElem = this.binHeap[index];
+    const cPrio = cElem.priority;
+    while (true) {
+      const leftPrio = this.binHeap[index * 2 + 1]?.priority ?? Infinity;
+      const rightPrio = this.binHeap[index * 2 + 2]?.priority ?? Infinity;
+      if (cPrio <= leftPrio && cPrio <= rightPrio) {
+        break;
+      }
+      const minIdx = index * 2 + (leftPrio < rightPrio ? 1 : 2);
+      this.binHeap[index] = this.binHeap[minIdx];
+      index = minIdx;
+    }
+    this.binHeap[index] = cElem;
   }
 }
 
-const partOne = (input: string) => {
-  let result = 0;
-  const data = parseInput(input);
+class Vertex {
+  key: number;
 
-  function createGraph() {
-    const graph = new WeightedGraph();
+  constructor(
+    private readonly isPartTwo: boolean,
+    private readonly maxI: number,
+    private readonly prevDirIdx: DirIdx | -1,
+    private readonly prevDirSteps: number,
+    private readonly coord: Coord,
+    private readonly dest: Coord,
+    readonly priority: number
+  ) {
+    this.key = this.keyForSteps(this.prevDirSteps);
+  }
+  keyForSteps(prevDirSteps: number): number {
+    const coord =
+      (this.coord[0] + this.maxI * this.coord[1]) * MaxStraightUltra * 5;
+    return coord + prevDirSteps * 5 + this.prevDirIdx;
+  }
+  isDest(): boolean {
+    const [ci, cj] = this.coord;
+    const [di, dj] = this.dest;
+    const arrived = ci === di && cj === dj;
+    const stopped =
+      !this.isPartTwo ||
+      this.prevDirIdx === -1 ||
+      this.prevDirSteps >= MinStraightUltra;
+    return arrived && stopped;
+  }
+  maxStraight(): number {
+    return this.isPartTwo ? MaxStraightUltra : MaxStraight;
+  }
+  markedKeys(): number[] {
+    if (this.isPartTwo && this.prevDirSteps < MinStraightUltra) {
+      return [this.keyForSteps(this.prevDirSteps)];
+    }
+    const ret: number[] = [];
+    for (
+      let prevDirSteps = this.prevDirSteps;
+      prevDirSteps <= this.maxStraight();
+      prevDirSteps++
+    ) {
+      ret.push(this.keyForSteps(prevDirSteps));
+    }
+    return ret;
+  }
+  adjacent(p: Problem): Vertex[] {
+    const [ci, cj] = this.coord;
+    return Dirs.flatMap(([di, dj], dirIdx) => {
+      let newDir = true;
+      if (
+        this.prevDirIdx === dirIdx &&
+        this.prevDirSteps >= this.maxStraight()
+      ) {
+        return [];
+      }
+      if (this.prevDirIdx !== -1) {
+        const diffDirIdx = (this.prevDirIdx + 4 - dirIdx) % 4;
+        if (diffDirIdx === 2) {
+          return [];
+        }
+        if (
+          this.isPartTwo &&
+          (diffDirIdx === 1 || diffDirIdx === 3) &&
+          this.prevDirSteps < MinStraightUltra
+        ) {
+          return [];
+        }
+        newDir = diffDirIdx !== 0;
+      }
+      const [ni, nj] = [ci + di, cj + dj];
+      const priority = this.priority + (p.heatLoss[ni]?.[nj] ?? Infinity);
+      return [
+        new Vertex(
+          this.isPartTwo,
+          this.maxI,
+          dirIdx as DirIdx,
+          newDir ? 1 : this.prevDirSteps + 1,
+          [ni, nj],
+          this.dest,
+          priority
+        ),
+      ];
+    });
+  }
+}
 
-    for (let row = 0; row < data.length; row++) {
-      for (let col = 0; col < data[row].length; col++) {
-        const options = ["l", "r", "u", "d"];
-        for (const a of options) {
-          for (const b of options) {
-            for (const c of options) {
-              let possible = true;
-              if (b === "d" && a === "u") possible = false;
-              if (b === "u" && a === "d") possible = false;
-              if (b === "l" && a === "r") possible = false;
-              if (b === "r" && a === "l") possible = false;
+class Problem {
+  maxI: number;
+  maxJ: number;
+  heatLoss: number[][];
 
-              if (b === "d" && c === "u") possible = false;
-              if (b === "u" && c === "d") possible = false;
-              if (b === "l" && c === "r") possible = false;
-              if (b === "r" && c === "l") possible = false;
+  constructor(input: string) {
+    this.heatLoss = input
+      .trim()
+      .split("\n")
+      .map((l) => Array.from(l.trim()).map(Number));
 
-              const downs = [...`${a}${b}${c}`.matchAll(/d/g)].length;
-              const ups = [...`${a}${b}${c}`.matchAll(/u/g)].length;
-              const lefts = [...`${a}${b}${c}`.matchAll(/l/g)].length;
-              const rights = [...`${a}${b}${c}`.matchAll(/r/g)].length;
-
-              if (downs > row) possible = false;
-              if (ups > data.length - 1) possible = false;
-              if (lefts > data[row].length - 1) possible = false;
-              if (rights > col) possible = false;
-
-              if (possible) {
-                graph.addVertex(`${a}${b}${c};${row};${col}`);
-                if (row > 0 && [a, b, c].some((e) => e !== "u") && c !== "d") {
-                  graph.addVertex(`${b}${c}u;${row - 1};${col}`);
-                  graph.addEdge(
-                    `${a}${b}${c};${row};${col}`,
-                    `${b}${c}u;${row - 1};${col}`,
-                    data[row - 1][col]
-                  );
-                }
-                if (
-                  row < data.length - 1 &&
-                  [a, b, c].some((e) => e !== "d") &&
-                  c !== "u"
-                ) {
-                  graph.addVertex(`${b}${c}d;${row + 1};${col}`);
-                  graph.addEdge(
-                    `${a}${b}${c};${row};${col}`,
-                    `${b}${c}d;${row + 1};${col}`,
-                    data[row + 1][col]
-                  );
-                }
-                if (col > 0 && [a, b, c].some((e) => e !== "l") && c !== "r") {
-                  graph.addVertex(`${b}${c}l;${row};${col - 1}`);
-                  graph.addEdge(
-                    `${a}${b}${c};${row};${col}`,
-                    `${b}${c}l;${row};${col - 1}`,
-                    data[row][col - 1]
-                  );
-                }
-                if (
-                  col < data[row].length - 1 &&
-                  [a, b, c].some((e) => e !== "r") &&
-                  c !== "l"
-                ) {
-                  graph.addVertex(`${b}${c}r;${row};${col + 1}`);
-                  graph.addEdge(
-                    `${a}${b}${c};${row};${col}`,
-                    `${b}${c}r;${row};${col + 1}`,
-                    data[row][col + 1]
-                  );
-                }
-              }
-            }
-          }
+    this.maxI = this.heatLoss.length;
+    this.maxJ = this.heatLoss[0]?.length ?? 0;
+  }
+  aStar(start: Coord, dest: Coord, maxI: number, isPartTwo = false): number {
+    const heap = new Heap<Vertex>();
+    const visited = new Set<number>();
+    heap.push(new Vertex(isPartTwo, maxI, -1, 0, start, dest, 0));
+    while (true) {
+      const minVertex = heap.popMin();
+      if (minVertex === undefined) {
+        return Infinity;
+      }
+      if (visited.has(minVertex.key)) {
+        continue;
+      }
+      if (minVertex.isDest()) {
+        return minVertex.priority;
+      }
+      for (const markedKey of minVertex.markedKeys()) {
+        visited.add(markedKey);
+      }
+      for (const adjVertex of minVertex.adjacent(this)) {
+        if (!visited.has(adjVertex.key)) {
+          heap.push(adjVertex);
         }
       }
     }
-
-    return graph;
   }
+}
 
-  const graph = createGraph();
-  const startPoints = Object.keys(graph.adjacencyList).filter(
-    (e) => e.split(";")[1] === "0" && e.split(";")[2] === "0"
+const solveProblem = (input: string, isPartTwo = false) => {
+  const problem = new Problem(input);
+  const minTotalHeatLoss = problem.aStar(
+    [0, 0],
+    [problem.maxI - 1, problem.maxJ - 1],
+    problem.maxI,
+    isPartTwo
   );
-  const endPoints = Object.keys(graph.adjacencyList).filter(
-    (e) =>
-      e.split(";")[1] === `${data.length - 1}` &&
-      e.split(";")[2] === `${data[0].length - 1}`
-  );
-  let shortest = Number.MAX_SAFE_INTEGER;
 
-  let shortCount = 0;
-  for (const start of startPoints) {
-    for (const end of endPoints) {
-      const short = graph.Dijkstra(start, end);
-      shortCount++;
-      console.log(shortCount, "done of", startPoints.length * endPoints.length);
-      if (short.distance < shortest) {
-        shortest = short.distance;
-      }
-    }
-  }
-  result = shortest;
+  return minTotalHeatLoss;
+};
+
+const partOne = (input: string) => {
+  const result = solveProblem(input);
 
   console.log(`A-SIDE PUZZLE: ${result}`);
 };
 
+const partTwo = (input: string) => {
+  const result = solveProblem(input, true);
+
+  console.log(`B-SIDE PUZZLE: ${result}`);
+};
+
 partOne(input);
+partTwo(input);
